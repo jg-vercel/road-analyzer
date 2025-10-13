@@ -1,0 +1,68 @@
+{
+  "name": "도로 네트워크 분석기",
+  "short_name": "도로분석기",
+  "description": "OpenStreetMap 데이터를 활용한 실시간 도로 네트워크 분석 도구",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "categories": ["productivity", "utilities", "navigation"],
+  "lang": "ko",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "도로 네트워크 분석 화면"
+    },
+    {
+      "src": "/screenshot-narrow.png",
+      "sizes": "375x812",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "모바일 도로 분석 화면"
+    }
+  ],
+  "features": [
+    "도로 네트워크 실시간 분석",
+    "OpenStreetMap 데이터 연동",
+    "GeoJSON 데이터 처리",
+    "교차점 자동 감지",
+    "도로 편집 기능",
+    "다양한 지도 타일 지원"
+  ],
+  "scope": "/",
+  "id": "road-network-analyzer"
+}

@@ -10,13 +10,14 @@ interface MapViewProps {
   tileUrl: string
   roadNetwork: FeatureCollection | null
   inputGeoJson: FeatureCollection | null
+  intersections?: FeatureCollection | null
   highlightedFeature?: any
   onRoadNetworkUpdate?: (network: FeatureCollection) => void
   onFeatureClick?: (feature: any) => void
   shouldZoomToFeature?: boolean
 }
 
-function MapViewClient({ tileUrl, roadNetwork, inputGeoJson, highlightedFeature, onRoadNetworkUpdate, onFeatureClick, shouldZoomToFeature = true }: MapViewProps) {
+function MapViewClient({ tileUrl, roadNetwork, inputGeoJson, intersections, highlightedFeature, onRoadNetworkUpdate, onFeatureClick, shouldZoomToFeature = true }: MapViewProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<any>(null)
   const tileLayerRef = useRef<any>(null)
@@ -24,6 +25,7 @@ function MapViewClient({ tileUrl, roadNetwork, inputGeoJson, highlightedFeature,
   const inputLayerRef = useRef<any>(null)
   const editableLayerRef = useRef<any>(null)
   const highlightLayerRef = useRef<any>(null)
+  const intersectionLayerRef = useRef<any>(null) // 교차점 전용 레이어
   const [L, setL] = useState<any>(null)
 
   const [isEditMode, setIsEditMode] = useState(false)
@@ -164,17 +166,7 @@ function MapViewClient({ tileUrl, roadNetwork, inputGeoJson, highlightedFeature,
         }
       },
       pointToLayer: (feature: any, latlng: any) => {
-        // Render intersection points
-        if (feature.properties?.isIntersection) {
-          return L.circleMarker(latlng, {
-            radius: 6,
-            fillColor: "#f59e0b",
-            color: "#fff",
-            weight: 2,
-            opacity: 1,
-            fillOpacity: 0.9,
-          })
-        }
+        // 도로 네트워크에는 교차점이 포함되지 않으므로 일반 포인트만 처리
         return L.circleMarker(latlng, {
           radius: 4,
           fillColor: "#4ade80",
@@ -189,28 +181,18 @@ function MapViewClient({ tileUrl, roadNetwork, inputGeoJson, highlightedFeature,
           layer.bindPopup(`
             <div class="text-sm">
               <strong>피처 ID:</strong> ${feature.id || "N/A"}<br/>
-              ${feature.properties.isIntersection ? "<strong>교차점</strong>" : ""}
               ${feature.properties.name ? `<strong>이름:</strong> ${feature.properties.name}<br/>` : ""}
               ${feature.properties.highway ? `<strong>유형:</strong> ${feature.properties.highway}` : ""}
             </div>
           `)
         }
         
-        // Add click event to select feature (only for road features, not intersections)
-        if (!feature.properties?.isIntersection) {
-          layer.on('click', (e: any) => {
-            console.log("[도로분석기] MapView: Layer clicked, calling onFeatureClick with:", feature)
-            L.DomEvent.stopPropagation(e)
-            onFeatureClick?.(feature)
-          })
-        } else {
-          // 교차점은 클릭 이벤트 비활성화 (명시적으로)
-          layer.off('click')
-          layer.on('click', (e: any) => {
-            L.DomEvent.stopPropagation(e)
-            // 교차점은 선택 불가 (아무 동작하지 않음)
-          })
-        }
+        // 도로 피처에만 클릭 이벤트 추가 (교차점은 별도 레이어에서 처리)
+        layer.on('click', (e: any) => {
+          console.log("[도로분석기] MapView: Road layer clicked, calling onFeatureClick with:", feature)
+          L.DomEvent.stopPropagation(e)
+          onFeatureClick?.(feature)
+        })
       },
     }).addTo(mapInstanceRef.current)
     
@@ -221,18 +203,88 @@ function MapViewClient({ tileUrl, roadNetwork, inputGeoJson, highlightedFeature,
     }
   }, [L, roadNetwork, isEditMode, isRoadNetworkVisible])
 
+  // Render intersections (separate layer for visual display only)
+  useEffect(() => {
+    console.log("[도로분석기] Intersection render effect triggered", {
+      hasL: !!L,
+      hasMap: !!mapInstanceRef.current,
+      hasIntersections: !!intersections,
+      intersectionFeatures: intersections?.features?.length || 0,
+      isRoadNetworkVisible,
+      timestamp: new Date().toISOString()
+    })
+
+    // Clean up existing intersection layer
+    if (intersectionLayerRef.current) {
+      console.log("[도로분석기] Removing existing intersection layer")
+      intersectionLayerRef.current.remove()
+      intersectionLayerRef.current = null
+    }
+
+    if (!L || !mapInstanceRef.current || !intersections || !isRoadNetworkVisible) {
+      console.log("[도로분석기] Skipping intersection render - conditions not met")
+      return
+    }
+
+    console.log("[도로분석기] Creating new intersection layer")
+
+    try {
+      intersectionLayerRef.current = L.geoJSON(intersections, {
+        pointToLayer: (feature: any, latlng: any) => {
+          return L.circleMarker(latlng, {
+            radius: 6,
+            fillColor: "#f59e0b",
+            color: "#fff",
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.9,
+          })
+        },
+        onEachFeature: (feature: any, layer: any) => {
+          if (feature.properties) {
+            layer.bindPopup(`
+              <div class="text-sm">
+                <strong>교차점</strong><br/>
+                <strong>연결된 도로:</strong> ${feature.properties.connectedRoads?.length || 0}개<br/>
+                ${feature.properties.connectedRoads ? `<strong>도로 ID:</strong> ${feature.properties.connectedRoads.join(', ')}` : ""}
+              </div>
+            `)
+          }
+          
+          // 교차점은 클릭 이벤트 비활성화 (시각적 표시만)
+          layer.on('click', (e: any) => {
+            L.DomEvent.stopPropagation(e)
+            // 교차점은 선택하지 않음 (시각적 표시 목적만)
+          })
+        },
+      }).addTo(mapInstanceRef.current)
+      
+      console.log("[도로분석기] Intersection layer created and added to map successfully")
+    } catch (error) {
+      console.error("[도로분석기] Error creating intersection layer:", error)
+      intersectionLayerRef.current = null
+    }
+  }, [L, intersections, isRoadNetworkVisible])
+
   // Handle road network visibility toggle
   useEffect(() => {
     if (!L || !mapInstanceRef.current) return
 
     if (!isRoadNetworkVisible) {
-      console.log("[도로분석기] Hiding road network, highlights, and editable layers")
+      console.log("[도로분석기] Hiding road network, intersections, highlights, and editable layers")
       
       // Remove road network layer
       if (roadNetworkLayerRef.current) {
         console.log("[도로분석기] Removing road network layer")
         roadNetworkLayerRef.current.remove()
         roadNetworkLayerRef.current = null
+      }
+      
+      // Remove intersection layer
+      if (intersectionLayerRef.current) {
+        console.log("[도로분석기] Removing intersection layer")
+        intersectionLayerRef.current.remove()
+        intersectionLayerRef.current = null
       }
       
       // Also remove highlight layer when hiding roads
@@ -352,10 +404,17 @@ function MapViewClient({ tileUrl, roadNetwork, inputGeoJson, highlightedFeature,
 
     console.log("[도로분석기] Force rerendering road network")
     
-    // Clean up existing layers (including any leftover editable layers)
+    // Clean up existing layers (including any leftover editable and intersection layers)
     if (roadNetworkLayerRef.current) {
       roadNetworkLayerRef.current.remove()
       roadNetworkLayerRef.current = null
+    }
+    
+    // Clean up intersection layer
+    if (intersectionLayerRef.current) {
+      console.log("[도로분석기] Removing intersection layer during force rerender")
+      intersectionLayerRef.current.remove()
+      intersectionLayerRef.current = null
     }
     
     // Also clean up any leftover editable layers
@@ -382,17 +441,7 @@ function MapViewClient({ tileUrl, roadNetwork, inputGeoJson, highlightedFeature,
           }
         },
         pointToLayer: (feature: any, latlng: any) => {
-          // Render intersection points
-          if (feature.properties?.isIntersection) {
-            return L.circleMarker(latlng, {
-              radius: 6,
-              fillColor: "#f59e0b",
-              color: "#fff",
-              weight: 2,
-              opacity: 1,
-              fillOpacity: 0.9,
-            })
-          }
+          // 도로 네트워크에는 교차점이 포함되지 않으므로 일반 포인트만 처리
           return L.circleMarker(latlng, {
             radius: 4,
             fillColor: "#4ade80",
@@ -407,28 +456,18 @@ function MapViewClient({ tileUrl, roadNetwork, inputGeoJson, highlightedFeature,
             layer.bindPopup(`
               <div class="text-sm">
                 <strong>피처 ID:</strong> ${feature.id || "N/A"}<br/>
-                ${feature.properties.isIntersection ? "<strong>교차점</strong>" : ""}
                 ${feature.properties.name ? `<strong>이름:</strong> ${feature.properties.name}<br/>` : ""}
                 ${feature.properties.highway ? `<strong>유형:</strong> ${feature.properties.highway}` : ""}
               </div>
             `)
           }
           
-          // Add click event to select feature (only for road features, not intersections)
-          if (!feature.properties?.isIntersection) {
-            layer.on('click', (e: any) => {
-              console.log("[도로분석기] MapView: Layer clicked, calling onFeatureClick with:", feature)
-              L.DomEvent.stopPropagation(e)
-              onFeatureClick?.(feature)
-            })
-          } else {
-            // 교차점은 클릭 이벤트 비활성화 (명시적으로)
-            layer.off('click')
-            layer.on('click', (e: any) => {
-              L.DomEvent.stopPropagation(e)
-              // 교차점은 선택 불가 (아무 동작하지 않음)
-            })
-          }
+          // 도로 피처에만 클릭 이벤트 추가 (교차점은 별도 레이어에서 처리)
+          layer.on('click', (e: any) => {
+            console.log("[도로분석기] MapView: Road layer clicked (force rerender), calling onFeatureClick with:", feature)
+            L.DomEvent.stopPropagation(e)
+            onFeatureClick?.(feature)
+          })
         },
       }).addTo(mapInstanceRef.current)
       

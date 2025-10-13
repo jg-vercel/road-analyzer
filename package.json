@@ -97,6 +97,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.9",
+    "@types/geojson": "^7946.0.16",
     "@types/leaflet-editable": "^1.2.7",
     "@types/node": "^22",
     "@types/react": "^19",

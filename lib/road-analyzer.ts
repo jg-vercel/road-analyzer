@@ -2,14 +2,29 @@ import type { FeatureCollection, Feature, LineString, Point, Position } from "ge
 
 /**
  * Analyzes road network from OpenStreetMap Overpass API
+ * This is the API-based analysis method that fetches accurate road data from OSM.
  */
 export async function analyzeRoadNetwork(bounds: FeatureCollection, clipToBoundary: boolean = false): Promise<FeatureCollection> {
   // Extract bounding box from input GeoJSON
   const bbox = getBoundingBox(bounds)
 
   // Fetch road data from Overpass API
+  console.log("[도로분석기] 바운딩 박스:", bbox)
+  
+  // 바운딩 박스 크기 확인 (너무 크면 쿼리 실패 가능성 높음)
+  const bboxWidth = bbox.east - bbox.west
+  const bboxHeight = bbox.north - bbox.south
+  const bboxArea = bboxWidth * bboxHeight
+  
+  console.log(`[도로분석기] 분석 영역 크기: ${bboxWidth.toFixed(4)} × ${bboxHeight.toFixed(4)} (면적: ${bboxArea.toFixed(6)})`)
+  
+  // 영역이 너무 크면 경고
+  if (bboxArea > 0.01) { // 약 1도 × 1도 이상
+    console.warn("[도로분석기] 경고: 분석 영역이 매우 큽니다. 요청이 실패하거나 오래 걸릴 수 있습니다.")
+  }
+
   const overpassQuery = `
-    [out:json][timeout:25];
+    [out:json][timeout:60][maxsize:1073741824];
     (
       way["highway"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
       way["aeroway"~"^(runway|taxiway)$"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
@@ -18,43 +33,90 @@ export async function analyzeRoadNetwork(bounds: FeatureCollection, clipToBounda
     );
     out geom;
   `
+  
+  console.log("[도로분석기] Overpass 쿼리:", overpassQuery.trim())
+
+  // Overpass API 서버 목록 (대체 서버 포함)
+  const overpassServers = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
+    "https://overpass.openstreetmap.fr/api/interpreter"
+  ]
+
+  let lastError: Error | null = null
+  let data: any = null
+
+  // 각 서버에 대해 재시도
+  for (let serverIndex = 0; serverIndex < overpassServers.length; serverIndex++) {
+    const server = overpassServers[serverIndex]
+    console.log(`[도로분석기] Overpass API 요청 시도 ${serverIndex + 1}/${overpassServers.length}: ${server}`)
+
+    try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30초 타임아웃
+
+      const response = await fetch(server, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "User-Agent": "RoadNetworkAnalyzer/1.0"
+        },
+        body: overpassQuery,
+        signal: controller.signal
+      })
+
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error")
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`)
+      }
+
+      data = await response.json()
+      console.log(`[도로분석기] Overpass API 요청 성공: ${server}`)
+      break // 성공하면 루프 종료
+
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      console.warn(`[도로분석기] Overpass API 요청 실패 (${server}):`, lastError.message)
+      
+      // 마지막 서버가 아니면 잠시 대기 후 다음 서버 시도
+      if (serverIndex < overpassServers.length - 1) {
+        console.log(`[도로분석기] ${2000}ms 후 다음 서버 시도...`)
+        await new Promise(resolve => setTimeout(resolve, 2000))
+      }
+    }
+  }
+
+  // 모든 서버에서 실패한 경우
+  if (!data) {
+    const errorMessage = lastError 
+      ? `모든 Overpass API 서버에서 요청 실패: ${lastError.message}`
+      : "알 수 없는 오류로 Overpass API 요청 실패"
+    
+    console.error("[도로분석기] Overpass API 요청 완전 실패:", errorMessage)
+    throw new Error(errorMessage)
+  }
 
   try {
-    const response = await fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST",
-      body: overpassQuery,
-    })
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch road data")
-    }
-
-    const data = await response.json()
-
     // Convert Overpass data to GeoJSON
     console.log("[도로분석기] Overpass data elements:", data.elements?.length || 0)
     
     const rawFeatures: Feature[] = data.elements
       .filter((element: any) => element.type === "way" && element.geometry)
-      .map((way: any) => {
+      .map((way: any, index: number) => {
         const coordinates: Position[] = way.geometry.map((node: any) => [node.lon, node.lat])
 
         return {
           type: "Feature",
-          id: way.id,
-          geometry: {
-            type: "LineString",
-            coordinates,
-          },
           properties: {
-            highway: way.tags?.highway || way.tags?.aeroway || way.tags?.railway || way.tags?.waterway || "unknown",
-            name: way.tags?.name || "Unnamed",
-            osmId: way.id,
-            type: way.tags?.highway ? "highway" : 
-                  way.tags?.aeroway ? "aeroway" : 
-                  way.tags?.railway ? "railway" : 
-                  way.tags?.waterway ? "waterway" : "unknown",
+            index: index
           },
+          geometry: {
+            coordinates,
+            type: "LineString"
+          }
         } as Feature<LineString>
       })
 
@@ -251,22 +313,30 @@ export function detectIntersections(roadNetwork: FeatureCollection): FeatureColl
             properties: {
               isIntersection: true,
               connectedRoads: [road1.id, road2.id],
+              source: 'overpass_api', // 분석 방식 정보 추가
+              analysisMethod: 'api',   // 분석 방법 명시
             },
           })
         } else {
           // Add to connected roads
           const existing = intersectionPoints.get(key)!
-          if (!existing.properties.connectedRoads.includes(road1.id)) {
-            existing.properties.connectedRoads.push(road1.id)
-          }
-          if (!existing.properties.connectedRoads.includes(road2.id)) {
-            existing.properties.connectedRoads.push(road2.id)
+          if (existing.properties && existing.properties.connectedRoads) {
+            if (!existing.properties.connectedRoads.includes(road1.id)) {
+              existing.properties.connectedRoads.push(road1.id)
+            }
+            if (!existing.properties.connectedRoads.includes(road2.id)) {
+              existing.properties.connectedRoads.push(road2.id)
+            }
           }
         }
 
-        // Update road features to include intersection point
-        updateRoadWithIntersection(road1, point)
-        updateRoadWithIntersection(road2, point)
+        // Update road features to include intersection point (only for LineString features)
+        if (road1.geometry.type === 'LineString') {
+          updateRoadWithIntersection(road1 as Feature<LineString>, point)
+        }
+        if (road2.geometry.type === 'LineString') {
+          updateRoadWithIntersection(road2 as Feature<LineString>, point)
+        }
       })
     }
   }

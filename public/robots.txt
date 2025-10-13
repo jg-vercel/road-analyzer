@@ -1,0 +1,9 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+
+# Host
+Host: https://road-network-analyzer.vercel.app
+
+# Sitemaps
+Sitemap: https://road-network-analyzer.vercel.app/sitemap.xml

@@ -1,11 +1,12 @@
 "use client"
 
 import { MapView } from "@/components/map-view"
-import { ControlPanel } from "@/components/control-panel"
+import { ControlPanel, type AnalysisMethod, type ImageAnalysisOptions } from "@/components/control-panel"
 import { DataPanel } from "@/components/data-panel"
 import { useState } from "react"
 import type { FeatureCollection } from "geojson"
 import { analyzeRoadNetwork, detectIntersections } from "@/lib/road-analyzer"
+import { analyzeRoadNetworkFromImage } from "@/lib/image-road-analyzer"
 import { useToast } from "@/hooks/use-toast"
 import { useLocalStorage } from "@/hooks/use-local-storage"
 
@@ -16,11 +17,16 @@ export default function Home() {
   const [tileUrl, setTileUrl] = useLocalStorage("road-analyzer-tile-url", "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
   const [roadNetwork, setRoadNetwork] = useLocalStorage<FeatureCollection | null>("road-analyzer-road-network", null)
   const [inputGeoJson, setInputGeoJson] = useLocalStorage<FeatureCollection | null>("road-analyzer-input-geojson", null)
+  const [intersections, setIntersections] = useState<FeatureCollection | null>(null) // 교차점은 별도 관리 (저장하지 않음)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [highlightedFeature, setHighlightedFeature] = useState<any>(null)
   const { toast } = useToast()
 
-  const handleAnalyze = async (clipToBoundary: boolean = false) => {
+  const handleAnalyze = async (
+    method: AnalysisMethod, 
+    imageOptions?: ImageAnalysisOptions, 
+    clipToBoundary: boolean = false
+  ) => {
     if (!inputGeoJson) {
       toast({
         title: "입력 영역 없음",
@@ -41,33 +47,117 @@ export default function Home() {
     }
 
     setIsAnalyzing(true)
+    
+    // 분석 방식에 따른 토스트 메시지
+    const methodName = method === 'api' ? 'Overpass API' : '이미지 분석'
+    const methodDescription = method === 'api' 
+      ? 'OpenStreetMap Overpass API에서 도로 네트워크 데이터를 가져오는 중입니다'
+      : '위성 이미지를 분석하여 도로를 자동 감지하는 중입니다'
+    
     toast({
-      title: "분석 중... (Overpass API)",
-      description: "OpenStreetMap Overpass API에서 도로 네트워크 데이터를 가져오는 중입니다",
+      title: `분석 중... (${methodName})`,
+      description: methodDescription,
     })
 
     try {
-      // Fetch road data from Overpass API
-      const rawRoadNetwork = await analyzeRoadNetwork(inputGeoJson, clipToBoundary)
-
-      // Detect intersections and normalize coordinates
-      const networkWithIntersections = detectIntersections(rawRoadNetwork)
-
-      setRoadNetwork(networkWithIntersections)
-
+      let roadResult: FeatureCollection
+      let intersectionResult: FeatureCollection | null = null
+      
+      if (method === 'api') {
+        // API 기반 분석 (원본 데이터만 사용, 교차점 알고리즘 무시)
+        console.log('[도로분석기] API 기반 분석 시작 (원본 데이터만 사용)')
+        roadResult = await analyzeRoadNetwork(inputGeoJson, clipToBoundary)
+        
+        // 교차점 처리 완전히 무시 - Overpass API 원본 데이터만 사용
+        intersectionResult = null
+        
+        console.log(`[도로분석기] API 분석 완료: ${roadResult.features.length}개 도로 (교차점 알고리즘 무시)`)
+      } else {
+        // 이미지 기반 분석 (새로운 방식)
+        console.log('[도로분석기] 이미지 기반 분석 시작', imageOptions)
+        const fullResult = await analyzeRoadNetworkFromImage(inputGeoJson, imageOptions, clipToBoundary)
+        
+        // 도로와 교차점 분리
+        const roadFeatures = fullResult.features.filter(f => !f.properties?.isIntersection)
+        const intersectionFeatures = fullResult.features.filter(f => f.properties?.isIntersection)
+        
+        roadResult = {
+          type: 'FeatureCollection',
+          features: roadFeatures
+        }
+        
+        if (intersectionFeatures.length > 0) {
+          intersectionResult = {
+            type: 'FeatureCollection',
+            features: intersectionFeatures
+          }
+        }
+        
+        console.log(`[도로분석기] 이미지 분석 완료: ${roadFeatures.length}개 도로, ${intersectionFeatures.length}개 교차점`)
+      }
+      
+      // 도로 네트워크만 저장 (교차점은 제외)
+      setRoadNetwork(roadResult)
+      
+      // 교차점은 별도 상태로 관리 (저장하지 않음)
+      setIntersections(intersectionResult)
+      
+      const intersectionCount = intersectionResult?.features.length || 0
+      
       toast({
-        title: "분석 완료 (Overpass API)",
-        description: `OpenStreetMap Overpass API를 통해 ${rawRoadNetwork.features.length}개의 도로 구간과 ${
-          networkWithIntersections.features.length - rawRoadNetwork.features.length
-        }개의 교차점을 발견했습니다`,
+        title: `분석 완료 (${methodName})`,
+        description: method === 'api' 
+          ? `${methodName}를 통해 ${roadResult.features.length}개의 도로 구간을 발견했습니다 (원본 데이터)`
+          : `${methodName}를 통해 ${roadResult.features.length}개의 도로 구간과 ${intersectionCount}개의 교차점을 발견했습니다`,
       })
+      
+      console.log(`[도로분석기] 최종 결과: ${roadResult.features.length}개 도로, ${intersectionCount}개 교차점 (방식: ${methodName})`)
+      
     } catch (error) {
-      console.error("[도로분석기] Analysis failed:", error)
+      console.error(`[도로분석기] ${methodName} 분석 실패:`, error)
+      
+      // 에러 타입에 따른 구체적인 메시지 제공
+      let errorTitle = `${methodName} 분석 실패`
+      let errorDescription = "알 수 없는 오류가 발생했습니다."
+      
+      if (error instanceof Error) {
+        const errorMessage = error.message.toLowerCase()
+        
+        if (errorMessage.includes('fetch') || errorMessage.includes('network')) {
+          errorTitle = "네트워크 연결 오류"
+          errorDescription = "인터넷 연결을 확인하고 다시 시도해주세요. VPN을 사용 중이라면 비활성화해보세요."
+        } else if (errorMessage.includes('timeout') || errorMessage.includes('abort')) {
+          errorTitle = "요청 시간 초과"
+          errorDescription = "분석 영역이 너무 크거나 서버가 응답하지 않습니다. 더 작은 영역으로 다시 시도해주세요."
+        } else if (errorMessage.includes('overpass') || errorMessage.includes('api')) {
+          errorTitle = "Overpass API 오류"
+          errorDescription = "OpenStreetMap 서버에 일시적인 문제가 있습니다. 잠시 후 다시 시도하거나 이미지 분석을 사용해보세요."
+        } else if (errorMessage.includes('cors')) {
+          errorTitle = "CORS 오류"
+          errorDescription = "브라우저 보안 정책으로 인한 오류입니다. 페이지를 새로고침하고 다시 시도해주세요."
+        } else if (errorMessage.includes('json')) {
+          errorTitle = "데이터 파싱 오류"
+          errorDescription = "서버에서 받은 데이터를 처리할 수 없습니다. 다른 분석 방식을 시도해보세요."
+        } else {
+          errorDescription = error.message
+        }
+      }
+      
       toast({
-        title: "분석 실패",
-        description: error instanceof Error ? error.message : "도로 네트워크 데이터를 가져올 수 없습니다. 다시 시도해주세요.",
+        title: errorTitle,
+        description: errorDescription,
         variant: "destructive",
       })
+      
+      // 대안 제시
+      if (method === 'api') {
+        setTimeout(() => {
+          toast({
+            title: "💡 대안 제안",
+            description: "API 분석이 실패했습니다. 이미지 분석 방식을 시도해보세요.",
+          })
+        }, 3000)
+      }
     } finally {
       setIsAnalyzing(false)
     }
@@ -84,6 +174,7 @@ export default function Home() {
   const handleReset = () => {
     setInputGeoJson(null)
     setRoadNetwork(null)
+    setIntersections(null) // 교차점도 초기화
     setHighlightedFeature(null)
     setTileUrl("https://tile.openstreetmap.org/{z}/{x}/{y}.png")
     
@@ -184,6 +275,7 @@ export default function Home() {
           tileUrl={tileUrl}
           roadNetwork={roadNetwork}
           inputGeoJson={inputGeoJson}
+          intersections={intersections}
           highlightedFeature={highlightedFeature}
           onRoadNetworkUpdate={handleRoadNetworkUpdate}
           onFeatureClick={handleMapFeatureClick}

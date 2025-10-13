@@ -239,8 +239,8 @@ export function DataPanel({ roadNetwork, onRoadNetworkChange, onFeatureHighlight
           </CollapsiblePanel>
         )}
 
-        {/* Intersection List Panel */}
-        {roadNetwork && roadNetwork.features.some(f => f.properties?.isIntersection) && (
+        {/* 교차점은 이제 시각적 표시만 하므로 별도 목록 제거 */}
+        {false && roadNetwork && roadNetwork.features.some(f => f.properties?.isIntersection) && (
           <CollapsiblePanel
             title="교차점 목록"
             icon={<div className="w-4 h-4 rounded-full bg-amber-500" />}
@@ -308,19 +308,21 @@ export function DataPanel({ roadNetwork, onRoadNetworkChange, onFeatureHighlight
                 <h4 className="text-sm font-medium text-foreground mb-2">통계</h4>
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">전체 피처:</span>
-                    <span className="font-mono text-foreground">{roadNetwork.features.length}</span>
-                  </div>
-                  <div className="flex justify-between">
                     <span className="text-muted-foreground">도로 구간:</span>
                     <span className="font-mono text-foreground">
-                      {roadNetwork.features.filter((f) => f.geometry.type === "LineString").length}
+                      {roadNetwork.features.filter((f) => f.geometry.type === "LineString" && !f.properties?.isIntersection).length}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">교차점:</span>
+                    <span className="text-muted-foreground">포인트 피처:</span>
                     <span className="font-mono text-foreground">
-                      {roadNetwork.features.filter((f) => f.properties?.isIntersection).length}
+                      {roadNetwork.features.filter((f) => f.geometry.type === "Point" && !f.properties?.isIntersection).length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">전체 도로 피처:</span>
+                    <span className="font-mono text-foreground">
+                      {roadNetwork.features.filter((f) => !f.properties?.isIntersection).length}
                     </span>
                   </div>
                 </div>
