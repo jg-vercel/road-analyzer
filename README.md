@@ -144,32 +144,6 @@ pnpm build
 pnpm start
 ```
 
-## 🤝 기여하기
-
-1. 이 저장소를 Fork합니다
-2. Feature 브랜치를 생성합니다 (`git checkout -b feature/AmazingFeature`)
-3. 변경사항을 커밋합니다 (`git commit -m 'Add some AmazingFeature'`)
-4. 브랜치에 Push합니다 (`git push origin feature/AmazingFeature`)
-5. Pull Request를 생성합니다
-
-### 기여 가이드라인
-
-- 코드 스타일: ESLint와 Prettier 설정을 따라주세요
-- 커밋 메시지: 명확하고 설명적인 커밋 메시지 작성
-- 테스트: 새로운 기능 추가 시 관련 테스트 코드 포함
-- 문서화: README나 코드 주석 업데이트
-
-## 📄 라이선스
-
-이 프로젝트는 MIT 라이선스 하에 배포됩니다. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
-
-## 🙏 감사의 말
-
-- [OpenStreetMap](https://www.openstreetmap.org/) - 오픈소스 지도 데이터 제공
-- [Overpass API](https://overpass-api.de/) - 실시간 OSM 데이터 쿼리 서비스
-- [Leaflet](https://leafletjs.com/) - 오픈소스 지도 라이브러리
-- [Next.js](https://nextjs.org/) - React 기반 웹 프레임워크
-
 ## 📞 문의
 
 프로젝트에 대한 질문이나 제안사항이 있으시면 [Issues](https://github.com/road-network-analyzer/road-network-analyzer/issues)를 통해 연락해 주세요.
@@ -177,7 +151,7 @@ pnpm start
 ## 🌐 배포
 
 이 프로젝트는 [Vercel](https://vercel.com)에서 호스팅됩니다:
-- **프로덕션**: [https://road-network-analyzer.vercel.app](https://road-network-analyzer.vercel.app)
+- **프로덕션**: [https://road-analyzer.vercel.app/](https://road-analyzer.vercel.app/)
 
 ## 📊 분석 및 모니터링
 
