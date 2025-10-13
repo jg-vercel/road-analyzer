@@ -32,7 +32,7 @@ export async function analyzeRoadNetwork(bounds: FeatureCollection, clipToBounda
     const data = await response.json()
 
     // Convert Overpass data to GeoJSON
-    console.log("[v0] Overpass data elements:", data.elements?.length || 0)
+    console.log("[도로분석기] Overpass data elements:", data.elements?.length || 0)
     
     const rawFeatures: Feature[] = data.elements
       .filter((element: any) => element.type === "way" && element.geometry)
@@ -58,13 +58,13 @@ export async function analyzeRoadNetwork(bounds: FeatureCollection, clipToBounda
         } as Feature<LineString>
       })
 
-    console.log("[v0] Processed features:", rawFeatures.length)
+    console.log("[도로분석기] Processed features:", rawFeatures.length)
 
     // Optionally clip roads to boundary
     if (clipToBoundary) {
-      console.log("[v0] Clipping roads to boundary...")
+      console.log("[도로분석기] Clipping roads to boundary...")
       const clippedFeatures = clipRoadsToBoundary(rawFeatures, bounds)
-      console.log("[v0] Clipped features:", clippedFeatures.length)
+      console.log("[도로분석기] Clipped features:", clippedFeatures.length)
       return {
         type: "FeatureCollection",
         features: clippedFeatures,
@@ -76,7 +76,7 @@ export async function analyzeRoadNetwork(bounds: FeatureCollection, clipToBounda
       features: rawFeatures,
     }
   } catch (error) {
-    console.error("[v0] Road analysis error:", error)
+    console.error("[도로분석기] Road analysis error:", error)
     throw error
   }
 }

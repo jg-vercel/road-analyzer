@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Map, Layers, Upload, Loader2, RotateCcw } from "lucide-react"
 import type { FeatureCollection } from "geojson"
 import { useToast } from "@/hooks/use-toast"
@@ -38,7 +37,6 @@ export function ControlPanel({
 }: ControlPanelProps) {
   const [geoJsonText, setGeoJsonText] = useLocalStorage("road-analyzer-geojson-text", "")
   const [customUrl, setCustomUrl] = useState("")
-  const [clipToBoundary, setClipToBoundary] = useState(false)
   const { toast } = useToast()
 
   const handleGeoJsonSubmit = () => {
@@ -204,19 +202,8 @@ export function ControlPanel({
             로드된 영역을 분석하여 OpenStreetMap에서 도로 네트워크 데이터를 추출합니다
           </p>
           
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="clipToBoundary" 
-              checked={clipToBoundary}
-              onCheckedChange={(checked) => setClipToBoundary(checked as boolean)}
-            />
-            <Label htmlFor="clipToBoundary" className="text-xs text-muted-foreground">
-              바운더리 내부 도로만 추출 (실험적)
-            </Label>
-          </div>
-          
           <Button 
-            onClick={() => onAnalyze(clipToBoundary)} 
+            onClick={() => onAnalyze(true)} 
             className="w-full" 
             variant="default" 
             disabled={isAnalyzing}

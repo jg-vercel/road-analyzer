@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Download, Database, Upload, MapPin, Eye, Trash2, BarChart3 } from "lucide-react"
 import type { FeatureCollection, Feature } from "geojson"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { CollapsiblePanel } from "./collapsible-panel"
 
@@ -20,12 +20,60 @@ export function DataPanel({ roadNetwork, onRoadNetworkChange, onFeatureHighlight
   const [importText, setImportText] = useState("")
   const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null)
   const { toast } = useToast()
+  const featureListRef = useRef<HTMLDivElement>(null)
+  const featureItemRefs = useRef<{ [key: string]: HTMLDivElement | null }>({})
+
+  // 고유한 식별자 생성 함수 (app/page.tsx와 동일한 로직)
+  const getFeatureIdentifier = (feature: any, index?: number) => {
+    if (!feature) return null
+    
+    // ID가 있으면 ID 사용
+    if (feature.id !== undefined) {
+      return `id-${feature.id}`
+    }
+    
+    // ID가 없으면 좌표 기반 해시 생성
+    if (feature.geometry?.coordinates) {
+      const coords = feature.geometry.coordinates
+      const firstCoord = coords[0]
+      const lastCoord = coords[coords.length - 1]
+      const coordHash = `${firstCoord[0]}-${firstCoord[1]}-${lastCoord[0]}-${lastCoord[1]}-${coords.length}`
+      return `coords-${coordHash}`
+    }
+    
+    // 마지막 수단으로 index 사용
+    if (index !== undefined) {
+      return `index-${index}`
+    }
+    
+    return null
+  }
 
   // Update selectedFeatureId when highlightedFeature changes (from map click)
   useEffect(() => {
     if (highlightedFeature) {
-      setSelectedFeatureId(String(highlightedFeature.id))
+      const highlightedId = getFeatureIdentifier(highlightedFeature)
+      console.log("[도로분석기] DataPanel: highlightedFeature changed:", {
+        highlightedId,
+        feature: highlightedFeature
+      })
+      
+      setSelectedFeatureId(highlightedId)
+      
+      // Scroll to the selected feature in the list
+      if (highlightedId) {
+        setTimeout(() => {
+          const featureElement = featureItemRefs.current[highlightedId]
+          if (featureElement && featureListRef.current) {
+            featureElement.scrollIntoView({
+              behavior: 'smooth',
+              block: 'center'
+            })
+          }
+        }, 100)
+      }
     } else {
+      console.log("[도로분석기] DataPanel: highlightedFeature cleared")
       setSelectedFeatureId(null)
     }
   }, [highlightedFeature])
@@ -69,41 +117,55 @@ export function DataPanel({ roadNetwork, onRoadNetworkChange, onFeatureHighlight
     }
   }
 
-  const handleFeatureClick = (feature: Feature) => {
-    const featureId = String(feature.id)
+  const handleFeatureClick = (feature: Feature, index: number) => {
+    const featureId = getFeatureIdentifier(feature, index)
+    console.log("[도로분석기] DataPanel: Feature clicked in list:", {
+      featureId,
+      selectedFeatureId,
+      feature
+    })
+    
     if (selectedFeatureId === featureId) {
       // 이미 선택된 feature를 다시 클릭하면 선택 해제
+      console.log("[도로분석기] DataPanel: Deactivating feature from list")
       setSelectedFeatureId(null)
       onFeatureHighlight?.(null, false)
     } else {
       // 새로운 feature 선택 (줌 없이)
+      console.log("[도로분석기] DataPanel: Activating feature from list")
       setSelectedFeatureId(featureId)
       onFeatureHighlight?.(feature, false)
     }
   }
 
-  const handleFeatureDelete = (feature: Feature, event: React.MouseEvent) => {
+  const handleFeatureDelete = (feature: Feature, event: React.MouseEvent, index: number) => {
     event.stopPropagation() // 클릭 이벤트 전파 방지
     
     if (!roadNetwork || !onRoadNetworkChange) return
 
-    const featureId = String(feature.id)
+    const featureId = getFeatureIdentifier(feature, index)
+    console.log("[도로분석기] DataPanel: Deleting feature:", {
+      featureId,
+      selectedFeatureId
+    })
+    
     const updatedNetwork = {
       ...roadNetwork,
-      features: roadNetwork.features.filter(f => String(f.id) !== featureId)
+      features: roadNetwork.features.filter((f, i) => getFeatureIdentifier(f, i) !== featureId)
     }
 
     onRoadNetworkChange(updatedNetwork)
     
     // 삭제된 feature가 선택되어 있었다면 선택 해제
     if (selectedFeatureId === featureId) {
+      console.log("[도로분석기] DataPanel: Clearing selection after delete")
       setSelectedFeatureId(null)
       onFeatureHighlight?.(null, false)
     }
 
     toast({
       title: "Feature 삭제됨",
-      description: `Feature ID ${featureId}가 삭제되었습니다`,
+      description: `Feature ${index + 1}이 삭제되었습니다`,
     })
   }
 
@@ -121,62 +183,114 @@ export function DataPanel({ roadNetwork, onRoadNetworkChange, onFeatureHighlight
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
 
-        {/* Feature List Panel */}
+        {/* Road List Panel */}
         {roadNetwork && (
           <CollapsiblePanel
-            title="Feature 목록"
+            title="도로 목록"
             icon={<MapPin className="w-4 h-4 text-primary" />}
             defaultExpanded={true}
           >
-            <div className="max-h-80 overflow-y-auto space-y-1">
-              {roadNetwork.features.slice(0, 50).map((feature, index) => {
-                const featureId = String(feature.id)
-                const isSelected = selectedFeatureId === featureId
-                const isIntersection = feature.properties?.isIntersection
-                const name = feature.properties?.name || `${feature.properties?.type || 'Feature'} ${index + 1}`
-                
-                return (
-                  <div
-                    key={featureId}
-                    className={`p-2 rounded text-xs cursor-pointer transition-colors ${
-                      isSelected 
-                        ? 'bg-primary text-primary-foreground' 
-                        : 'bg-secondary hover:bg-secondary/80'
-                    }`}
-                    onClick={() => handleFeatureClick(feature)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        {isIntersection ? (
-                          <div className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" />
-                        ) : (
+            <div ref={featureListRef} className="h-96 overflow-y-auto space-y-1">
+              {roadNetwork.features
+                .map((feature, index) => ({ feature, index }))
+                .filter(({ feature }) => !feature.properties?.isIntersection)
+                .map(({ feature, index }) => {
+                  const featureId = getFeatureIdentifier(feature, index)
+                  const isSelected = selectedFeatureId === featureId
+                  const name = feature.properties?.name || `${feature.properties?.type || '도로'} ${index + 1}`
+                  
+                  return (
+                    <div
+                      key={featureId}
+                      ref={(el) => {
+                        featureItemRefs.current[featureId] = el
+                      }}
+                      className={`p-2 rounded text-xs cursor-pointer transition-colors ${
+                        isSelected 
+                          ? 'bg-primary text-primary-foreground' 
+                          : 'bg-secondary hover:bg-secondary/80'
+                      }`}
+                      onClick={() => handleFeatureClick(feature, index)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
                           <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-                        )}
-                        <span className="font-medium truncate">{name}</span>
+                          <span className="font-medium truncate">{name}</span>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <Eye className="w-3 h-3 opacity-60" />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0 hover:bg-destructive hover:text-destructive-foreground"
+                            onClick={(e) => handleFeatureDelete(feature, e, index)}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <Eye className="w-3 h-3 opacity-60" />
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 w-6 p-0 hover:bg-destructive hover:text-destructive-foreground"
-                          onClick={(e) => handleFeatureDelete(feature, e)}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
+                      <div className="text-xs opacity-60 mt-1">
+                        {feature.properties?.highway || feature.properties?.type || '도로'}
                       </div>
                     </div>
-                    <div className="text-xs opacity-60 mt-1">
-                      {isIntersection ? '교차점' : feature.properties?.highway || feature.properties?.type}
+                  )
+                })}
+            </div>
+          </CollapsiblePanel>
+        )}
+
+        {/* Intersection List Panel */}
+        {roadNetwork && roadNetwork.features.some(f => f.properties?.isIntersection) && (
+          <CollapsiblePanel
+            title="교차점 목록"
+            icon={<div className="w-4 h-4 rounded-full bg-amber-500" />}
+            defaultExpanded={false}
+          >
+            <div className="h-60 overflow-y-auto space-y-1">
+              {roadNetwork.features
+                .map((feature, index) => ({ feature, index }))
+                .filter(({ feature }) => feature.properties?.isIntersection)
+                .map(({ feature, index }) => {
+                  const featureId = getFeatureIdentifier(feature, index)
+                  const isSelected = selectedFeatureId === featureId
+                  const name = `교차점 ${index + 1}`
+                  
+                  return (
+                    <div
+                      key={featureId}
+                      ref={(el) => {
+                        featureItemRefs.current[featureId] = el
+                      }}
+                      className={`p-2 rounded text-xs cursor-pointer transition-colors ${
+                        isSelected 
+                          ? 'bg-primary text-primary-foreground' 
+                          : 'bg-secondary hover:bg-secondary/80'
+                      }`}
+                      onClick={() => handleFeatureClick(feature, index)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <div className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" />
+                          <span className="font-medium truncate">{name}</span>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <Eye className="w-3 h-3 opacity-60" />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0 hover:bg-destructive hover:text-destructive-foreground"
+                            onClick={(e) => handleFeatureDelete(feature, e, index)}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="text-xs opacity-60 mt-1">
+                        교차점
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
-              {roadNetwork.features.length > 50 && (
-                <div className="text-xs text-muted-foreground text-center p-2">
-                  ... 및 {roadNetwork.features.length - 50}개 더
-                </div>
-              )}
+                  )
+                })}
             </div>
           </CollapsiblePanel>
         )}

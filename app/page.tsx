@@ -9,6 +9,9 @@ import { analyzeRoadNetwork, detectIntersections } from "@/lib/road-analyzer"
 import { useToast } from "@/hooks/use-toast"
 import { useLocalStorage } from "@/hooks/use-local-storage"
 
+// 전역 변수로 현재 선택된 Feature ID 추적
+let currentSelectedFeatureId: string | null = null
+
 export default function Home() {
   const [tileUrl, setTileUrl] = useLocalStorage("road-analyzer-tile-url", "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
   const [roadNetwork, setRoadNetwork] = useLocalStorage<FeatureCollection | null>("road-analyzer-road-network", null)
@@ -59,7 +62,7 @@ export default function Home() {
         }개의 교차점을 발견했습니다`,
       })
     } catch (error) {
-      console.error("[v0] Analysis failed:", error)
+      console.error("[도로분석기] Analysis failed:", error)
       toast({
         title: "분석 실패",
         description: error instanceof Error ? error.message : "도로 네트워크 데이터를 가져올 수 없습니다. 다시 시도해주세요.",
@@ -98,11 +101,68 @@ export default function Home() {
     })
   }
 
+  // Feature의 고유 식별자를 생성하는 함수
+  const getFeatureIdentifier = (feature: any) => {
+    if (!feature) {
+      console.log("[도로분석기] getFeatureIdentifier: feature is null/undefined")
+      return null
+    }
+    
+    // ID가 있으면 ID 사용
+    if (feature.id !== undefined) {
+      const id = `id-${feature.id}`
+      console.log("[도로분석기] getFeatureIdentifier: using ID", id)
+      return id
+    }
+    
+    // ID가 없으면 좌표 기반 해시 생성
+    if (feature.geometry?.coordinates) {
+      const coords = feature.geometry.coordinates
+      const firstCoord = coords[0]
+      const lastCoord = coords[coords.length - 1]
+      const coordHash = `${firstCoord[0]}-${firstCoord[1]}-${lastCoord[0]}-${lastCoord[1]}-${coords.length}`
+      const id = `coords-${coordHash}`
+      console.log("[도로분석기] getFeatureIdentifier: using coords", id)
+      return id
+    }
+    
+    console.log("[도로분석기] getFeatureIdentifier: no valid identifier found")
+    return null
+  }
+
   const handleMapFeatureClick = (feature: any) => {
+    console.log("=== MAP CLICK DEBUG START ===")
+    
+    const clickedId = getFeatureIdentifier(feature)
+    console.log("[도로분석기] Clicked ID:", clickedId)
+    console.log("[도로분석기] Current selected ID (global):", currentSelectedFeatureId)
+    console.log("[도로분석기] IDs equal?", clickedId === currentSelectedFeatureId)
+    
+    // 같은 Feature인지 확인 (전역 변수 사용)
+    if (currentSelectedFeatureId && clickedId && clickedId === currentSelectedFeatureId) {
+      console.log("[도로분석기] ✅ SAME FEATURE DETECTED - DEACTIVATING")
+      currentSelectedFeatureId = null
+      setHighlightedFeature(null)
+      console.log("=== MAP CLICK DEBUG END (DEACTIVATE) ===")
+      return
+    }
+    
+    console.log("[도로분석기] ❌ DIFFERENT FEATURE - ACTIVATING NEW ONE")
+    currentSelectedFeatureId = clickedId
     setHighlightedFeature(feature)
+    console.log("=== MAP CLICK DEBUG END (ACTIVATE) ===")
   }
 
   const handleFeatureHighlight = (feature: any, shouldZoom: boolean = true) => {
+    console.log("[도로분석기] handleFeatureHighlight called with:", feature)
+    if (feature) {
+      const featureId = getFeatureIdentifier(feature)
+      console.log("[도로분석기] Setting global selected ID to:", featureId)
+      currentSelectedFeatureId = featureId
+    } else {
+      console.log("[도로분석기] Clearing global selected ID")
+      currentSelectedFeatureId = null
+    }
     setHighlightedFeature(feature)
   }
 
